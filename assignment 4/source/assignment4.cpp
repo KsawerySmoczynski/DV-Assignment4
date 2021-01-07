@@ -68,6 +68,8 @@ vtkSmartPointer<vtkRenderWindow> createRenderWindowFromMapper( vtkSmartPointer<v
 	return window;
 }
 
+
+
 vtkSmartPointer<vtkRenderWindow> createRenderWindowFromMultipleMappers( std::vector<vtkSmartPointer<vtkMapper>> mappers )
 {
 	// create renderer and window
@@ -83,11 +85,16 @@ vtkSmartPointer<vtkRenderWindow> createRenderWindowFromMultipleMappers( std::vec
 	// task 4.2
 	// for every mapper we create an actor and add it to the renderer
 	// (do not forget to set the fallback color (see createRenderWindowFromMapper(...) )
-	
+
 	// student begin...
-
-	// your code here
-
+	vtkSmartPointer<vtkActor> actors[mappers.size()];
+	for (int i=0; i<mappers.size(); i++) {
+		actors[i] = vtkSmartPointer<vtkActor>::New();
+		actors[i] -> GetProperty()->SetColor( 1, 1, 1 );
+		actors[i] -> SetMapper( mappers[i] );
+		renderer -> AddActor( actors[i] );
+		
+	}
 	// ... student end
 
 
@@ -135,7 +142,6 @@ int main(int argc, char * argv[])
 	gradientFilter->SetDimensionality( 2 );
 	// use source as filter input
 	gradientFilter->SetInputConnection( source->GetOutputPort() );
-	
 
 	// 3.  create mappers
 	// a) image mapper, show the data as 2D image with standard color transfer function
@@ -161,17 +167,72 @@ int main(int argc, char * argv[])
 	gradientMapper->SetScalarRange( 0, 2 );
 	
     // -- end of basic visualization network definition --
-
-
+	
     // 4. create actors, renderers, render windows 	
-	vtkSmartPointer<vtkRenderWindow> imageWindow = createRenderWindowFromMapper( imageMapper );
-	vtkSmartPointer<vtkRenderWindow> contourWindow = createRenderWindowFromMapper( contourMapper );
-	vtkSmartPointer<vtkRenderWindow> gradientWindow = createRenderWindowFromMapper( gradientMapper );
+	// vtkSmartPointer<vtkRenderWindow> imageWindow = createRenderWindowFromMapper( imageMapper );
+	// vtkSmartPointer<vtkRenderWindow> contourWindow = createRenderWindowFromMapper( contourMapper );
+	// vtkSmartPointer<vtkRenderWindow> gradientWindow = createRenderWindowFromMapper( gradientMapper );
+	
 	
     // 5. successively show each window and allow user interaction (until it is closed)
-	doRenderingAndInteraction( imageWindow );
-	doRenderingAndInteraction( contourWindow );
-	doRenderingAndInteraction( gradientWindow );
+	// doRenderingAndInteraction( imageWindow );
+	// doRenderingAndInteraction( contourWindow );
+	// doRenderingAndInteraction( gradientWindow );
+
+	// Read before writing:
+	// https://lorensen.github.io/VTKExamples/site/Cxx/Meshes/ColoredElevationMap/
+	// https://vtk.org/Wiki/VTK/Examples/Cxx/Meshes/ElevationFilter
+	// https://kitware.github.io/vtk-examples/site/Cxx/medium 
+	// https://vtk.org/Wiki/VTK/Examples/Cxx/Visualization/ElevationBandsWithGlyphs
+
+	// Warp filter 
+	// https://vtk.org/doc/nightly/html/classvtkWarpScalar.html
+	vtkSmartPointer<vtkWarpScalar> warpScalarFilter= vtkSmartPointer<vtkWarpScalar>::New();
+	warpScalarFilter -> SetScaleFactor(2);
+	warpScalarFilter -> SetInputConnection( source -> GetOutputPort());
+	warpScalarFilter -> Update();
+
+	// ContourFilter
+	vtkSmartPointer<vtkContourFilter> newContourFilter = vtkSmartPointer<vtkContourFilter>::New();
+	// newContourFilter -> SetNumberOfContours(15);
+	newContourFilter -> GenerateValues(15, 682.0, 2543.0);
+	newContourFilter -> SetInputConnection( warpScalarFilter -> GetOutputPort());
+	
+	// Color transfer function
+	vtkSmartPointer<vtkColorTransferFunction> color = vtkSmartPointer<vtkColorTransferFunction>::New();
+	color -> AddRGBPoint(680, 30/255.0, 0, 0);
+	color -> AddRGBPoint(1064, 123/255.0, 0, 10/255.0);
+	color -> AddRGBPoint(1448, 241/255.0, 0, 0);
+	color -> AddRGBPoint(1832, 246/255.0, 146/255.0, 0/255.0);
+	color -> AddRGBPoint(2216, 1.0, 1.0, 19/255.0);
+	color -> AddRGBPoint(2500, 1.0, 1.0, 197/255.0);
+	
+	//Wrap filter mapper
+	vtkSmartPointer<vtkDataSetMapper> wrappedMapper = vtkSmartPointer<vtkDataSetMapper>::New();
+	wrappedMapper -> SetInputConnection( warpScalarFilter->GetOutputPort() );
+	wrappedMapper -> SetLookupTable( color );
+	wrappedMapper -> SetScalarRange(682, 2543);
+
+	// Contour filter mapper
+	vtkSmartPointer<vtkDataSetMapper> contourFilterMapper = vtkSmartPointer<vtkDataSetMapper>::New();
+	contourFilterMapper -> ScalarVisibilityOff();
+	contourFilterMapper -> SetInputConnection( newContourFilter->GetOutputPort() );
+
+	// Legend
+	vtkSmartPointer<vtkScalarBarActor> legend = vtkSmartPointer<vtkScalarBarActor>::New();
+	legend -> SetTitle("Elevation");
+	legend -> SetLookupTable(wrappedMapper->GetLookupTable());
+	legend -> SetLabelFormat("%g");
+
+	// Add mappers to the window
+	std::vector<vtkSmartPointer<vtkMapper>> mappers;
+	mappers.push_back(wrappedMapper);
+	mappers.push_back(contourFilterMapper);
+
+	vtkSmartPointer<vtkRenderWindow> newWindow = createRenderWindowFromMultipleMappers(mappers);
+	newWindow -> GetRenderers() -> GetFirstRenderer() -> AddActor2D (legend);
+
+	doRenderingAndInteraction( newWindow );
 
     return 0;
 }
